@@ -52,11 +52,11 @@
   <div class="who">
     <label for="who">Tôi là</label>
     <select id="who">
-      <option value="Đệ phụ">Đệ phụ (quản lý)</option>
-      <option value="Đệ 2">Đệ 2</option>
-      <option value="Đệ 3">Đệ 3</option>
-      <option value="Đệ 4">Đệ 4</option>
-      <option value="Chủ (dunatj)">Chủ (dunatj)</option>
+      <option value="de-phu">Đệ phụ (quản lý)</option>
+      <option value="de-2">Đệ 2</option>
+      <option value="de-3">Đệ 3</option>
+      <option value="de-4">Đệ 4</option>
+      <option value="chu">Chủ (dunatj)</option>
     </select>
   </div>
 </header>
@@ -81,6 +81,11 @@ const chatEl = $('#chat'), statusEl = $('#status'), statusText = $('#statusText'
 let topic = new URLSearchParams(location.search).get('topic') || 'dephu-team-7x3k9q';
 let seen = new Set();
 let polling = false;
+// Tên hiển thị theo id ASCII (header HTTP chỉ chấp nhận ký tự Latin-1,
+// nên id gửi qua header Title phải là ASCII; tên tiếng Việt chỉ để hiển thị)
+const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
+function disp(id){ return DISPLAY[id] || id || 'Ẩn danh'; }
+function asciiName(s){ return s.replace(/[^\x00-\x7F]/g, '_'); }
 
 $('#room').value = topic;
 $('#roomLink').innerHTML = 'Link phòng: <a href="?topic=' + encodeURIComponent(topic) + '" style="color:var(--accent)">mở link này</a>';
@@ -96,7 +101,7 @@ function addMsg(m){
   const me = (m.title || '') === who();
   const div = document.createElement('div');
   div.className = 'msg' + (me ? ' me' : '');
-  const sender = esc(m.title || 'Ẩn danh');
+  const sender = esc(disp(m.title));
   let html = '<div class="who-line">' + sender + '</div>';
   if (m.message) html += '<div class="body">' + esc(m.message) + '</div>';
   if (m.attachment) {
@@ -179,7 +184,7 @@ async function sendFile(file){
     const to = setTimeout(() => ctrl.abort(), 60000);
     const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
       method:'PUT', signal: ctrl.signal,
-      headers:{ 'Title': who(), 'Filename': file.name, 'Tags': 'paperclip' },
+      headers:{ 'Title': who(), 'Filename': asciiName(file.name), 'Tags': 'paperclip' },
       body: file
     });
     clearTimeout(to);
@@ -194,7 +199,7 @@ $('#attachBtn').addEventListener('click', () => $('#fileInput').click());
 $('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value=''; });
 $('#who').addEventListener('change', () => {
   localStorage.setItem('dephu-who', $('#who').value);
-  sysMsg('Bạn đang chat với tên: ' + $('#who').value);
+  sysMsg('Bạn đang chat với tên: ' + disp($('#who').value));
 });
 $('#joinBtn').addEventListener('click', () => {
   const t = $('#room').value.trim();
@@ -205,9 +210,9 @@ $('#joinBtn').addEventListener('click', () => {
 const savedWho = localStorage.getItem('dephu-who');
 if (savedWho) { const o = [...$('#who').options].find(x => x.value === savedWho); if (o) $('#who').value = savedWho; }
 
-sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + who());
+sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()));
 poll();
-setInterval(poll, 3000);
+setInterval(poll, 5000);
 </script>
 </body>
 </html>

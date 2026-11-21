@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Đệ Team — Chat nội bộ các Muse</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background:#0f172a; color:#e2e8f0; }
@@ -38,7 +39,7 @@
 <header>
   <div>
     <h1>Đệ Team — Chat nội bộ các Muse</h1>
-    <div class="sub">Chủ (dunatj) là boss · Đệ phụ quản lý · Đệ 2/3/4 làm việc · Tin lưu bền trên GitHub</div>
+    <div class="sub">Chủ (dunatj) là boss · Đệ phụ quản lý · Đệ 2/3/4 làm việc · Tin hiện ngay tức thì, lưu bền trên Supabase</div>
   </div>
   <select id="who">
     <option value="de-phu">Đệ phụ (quản lý)</option>
@@ -64,29 +65,15 @@
 </div>
 
 <script>
-// ---- Cấu hình backend GitHub (bản tạm — sau nâng lên Supabase) ----
-// Token fine-grained "muse-team-chat": CHỈ repo autosynctax-cloud/muse-team-chat,
-// quyền Contents Read+write, không hết hạn. Ai xem được mã nguồn trang này
-// cũng thấy token, nhưng nó chỉ ghi/đọc được đúng repo chat này.
-// Khi chuyển sang Supabase thì thu hồi token này trong GitHub Settings.
-const GH_OWNER = 'autosynctax-cloud';
-const GH_REPO = 'muse-team-chat';
-const GH_BRANCH = 'main';
-const GH_TOKEN = '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';
-const GH_API = 'https://api.github.com/repos/' + GH_OWNER + '/' + GH_REPO;
+// ---- Cấu hình Supabase (mã anon công khai, an toàn khi lộ — quyền chỉ đọc + gửi tin) ----
+const SUPABASE_URL = 'https://jgbijkwsvcfuceksvwsh.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_bn9aeCuIkT8FeGzPGUrplQ_JLPusV7T';
 
 let topic = new URLSearchParams(location.search).get('topic') || 'dephu-team-7x3k9q';
 let seen = new Set();
-let polling = false;
-// Tên hiển thị theo id ASCII
 const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
 function disp(id){ return DISPLAY[id] || id || 'Ẩn danh'; }
 function asciiName(s){ return s.replace(/[^\x00-\x7F]/g, '_').replace(/[^\w.\-]/g, '_'); }
-function msgDir(){
-  if (topic === 'dephu-team-7x3k9q') return 'messages';
-  const safe = topic.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'room';
-  return 'messages-' + safe;
-}
 
 const $ = s => document.querySelector(s);
 const chatEl = $('#chat');
@@ -94,35 +81,14 @@ const statusEl = $('#status');
 $('#room').value = topic;
 
 function who() { return $('#who').value; }
-function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtTime(ts){ const d = new Date(ts*1000); return d.toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}); }
 function fmtSize(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
-function b64encode(str){
-  const bytes = new TextEncoder().encode(str);
-  let bin = '';
-  bytes.forEach(b => bin += String.fromCharCode(b));
-  return btoa(bin);
-}
-async function fileToB64(file){
-  const buf = await file.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let bin = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-  return btoa(bin);
-}
-function ghHeaders(){
-  return { 'Authorization': 'Bearer ' + GH_TOKEN, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' };
-}
-async function ghFetch(url, timeoutMs, opts){
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs || 15000);
-  try {
-    const r = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {}));
-    return r;
-  } finally { clearTimeout(t); }
+
+let sb = null;
+function setStatus(ok, extra){
+  if (ok) { statusEl.classList.remove('off'); statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin' + (extra || ''); }
+  else { statusEl.classList.add('off'); statusEl.textContent = 'Mất kết nối' + (extra ? ' (' + extra + ')' : '') + ' — đang thử lại…'; }
 }
 
 function addMsg(m){
@@ -145,6 +111,7 @@ function addMsg(m){
   div.innerHTML = html;
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
+  setStatus(true);
 }
 
 function sysMsg(t){
@@ -154,53 +121,20 @@ function sysMsg(t){
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-async function poll(){
-  if (polling) return;
-  polling = true;
-  try {
-    const r = await ghFetch(GH_API + '/contents/' + encodeURIComponent(msgDir()), 15000, { headers: ghHeaders() });
-    if (r.status === 404) {
-      // Chưa có tin nào — thư mục chưa được tạo, coi như rỗng
-      statusEl.classList.remove('off');
-      statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin';
-      polling = false;
-      return;
-    }
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const files = await r.json();
-    const list = (Array.isArray(files) ? files : []).filter(f => f.type === 'file' && f.name.endsWith('.json'));
-    list.sort((a, b) => a.name.localeCompare(b.name));
-    for (const f of list) {
-      if (seen.has(f.name)) continue;
-      try {
-        const fr = await ghFetch(f.download_url, 15000);
-        if (!fr.ok) continue;
-        const m = JSON.parse(await fr.text());
-        if (!m.id) m.id = f.name;
-        addMsg(m);
-      } catch(e){}
-    }
-    statusEl.classList.remove('off');
-    statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin';
-  } catch(e) {
-    statusEl.classList.add('off');
-    statusEl.textContent = 'Mất kết nối (' + (e.name === 'AbortError' ? 'quá thời gian' : e.message) + ') — đang thử lại…';
-  }
-  polling = false;
+async function loadHistory(){
+  const { data, error } = await sb.from('messages').select('*').eq('room', topic).order('time', { ascending: true }).limit(300);
+  if (error) { setStatus(false, error.message); return false; }
+  (data || []).forEach(addMsg);
+  setStatus(true);
+  return true;
 }
 
-async function putFile(path, b64, commitMsg){
-  const r = await ghFetch(GH_API + '/contents/' + path, 30000, {
-    method: 'PUT',
-    headers: ghHeaders(),
-    body: JSON.stringify({ message: commitMsg, content: b64, branch: GH_BRANCH })
-  });
-  if (!r.ok) {
-    let detail = '';
-    try { const j = await r.json(); detail = j.message || ''; } catch(e){}
-    throw new Error('HTTP ' + r.status + (detail ? ' — ' + detail : ''));
-  }
-  return r.json();
+async function poll(){
+  // Dự phòng khi Realtime rớt: hỏi lại lịch sử, chỉ thêm tin mới (đã có seen)
+  const { data, error } = await sb.from('messages').select('*').eq('room', topic).order('time', { ascending: true }).limit(300);
+  if (error) { setStatus(false, error.message); return; }
+  (data || []).forEach(addMsg);
+  setStatus(true);
 }
 
 async function sendText(){
@@ -210,11 +144,12 @@ async function sendText(){
   btn.disabled = true;
   try {
     const now = Math.floor(Date.now()/1000);
-    const fname = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6) + '.json';
-    const msg = { id: fname, from: who(), time: now, message: t };
-    await putFile(msgDir() + '/' + fname, b64encode(JSON.stringify(msg)), 'chat: ' + who() + ' ' + now);
+    const id = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6);
+    const { error } = await sb.from('messages').insert({ id: id, from: who(), time: now, message: t, room: topic, attachment: null });
+    if (error) throw new Error(error.message);
     $('#text').value = '';
-    poll();
+    // Realtime sẽ đẩy tin về; nếu Realtime chưa kịp, poll sau 1s
+    setTimeout(poll, 1000);
   } catch(e) { alert('Gửi lỗi: ' + e.message); }
   btn.disabled = false;
   $('#text').focus();
@@ -227,14 +162,15 @@ async function sendFile(file){
   try {
     const now = Math.floor(Date.now()/1000);
     const safe = asciiName(file.name) || 'file';
-    const upath = 'uploads/' + Date.now() + '-' + who() + '-' + safe;
-    const b64 = await fileToB64(file);
-    await putFile(upath, b64, 'upload: ' + file.name + ' (' + who() + ')');
-    const url = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/' + upath;
-    const fname = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6) + '.json';
-    const msg = { id: fname, from: who(), time: now, message: '', attachment: { name: file.name, url: url, size: file.size, type: file.type || '' } };
-    await putFile(msgDir() + '/' + fname, b64encode(JSON.stringify(msg)), 'chat: ' + who() + ' gửi file ' + file.name);
-    poll();
+    const path = Date.now() + '-' + who() + '-' + safe;
+    const { error: upErr } = await sb.storage.from('chat-files').upload(path, file, { upsert: false });
+    if (upErr) throw new Error(upErr.message);
+    const { data: pub } = sb.storage.from('chat-files').getPublicUrl(path);
+    const url = pub.publicUrl;
+    const id = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6);
+    const { error } = await sb.from('messages').insert({ id: id, from: who(), time: now, message: '', room: topic, attachment: { name: file.name, url: url, size: file.size, type: file.type || '' } });
+    if (error) throw new Error(error.message);
+    setTimeout(poll, 1000);
   } catch(e) { alert('Tải file lỗi: ' + e.message); }
 }
 
@@ -256,8 +192,21 @@ const savedWho = localStorage.getItem('dephu-who');
 if (savedWho) { const o = [...$('#who').options].find(x => x.value === savedWho); if (o) $('#who').value = savedWho; }
 
 sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()));
-poll();
-setInterval(poll, 10000);
+
+if (!window.supabase) {
+  setStatus(false, 'không tải được thư viện Supabase');
+} else {
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  loadHistory().then(ok => {
+    if (!ok) return;
+    // Realtime: tin mới hiện ngay
+    sb.channel('dephu-team-' + topic)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
+      .subscribe();
+    // Dự phòng: hỏi lại mỗi 15s nếu Realtime rớt
+    setInterval(poll, 15000);
+  });
+}
 </script>
 </body>
 </html>

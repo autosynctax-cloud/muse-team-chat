@@ -18,9 +18,13 @@
   .who-line { font-size:12px; font-weight:700; color:#7dd3fc; margin-bottom:4px; }
   .msg.me .who-line { color:#a5f3fc; }
   .body { white-space:pre-wrap; word-break:break-word; font-size:15px; line-height:1.5; }
+  .mention { background:#0e7490; color:#fff; padding:0 4px; border-radius:4px; font-weight:700; }
+  .task-tag { background:#b45309; color:#fff; padding:1px 6px; border-radius:4px; font-weight:700; font-size:12px; }
   .time { font-size:11px; color:#94a3b8; margin-top:6px; text-align:right; }
   .sys { text-align:center; color:#94a3b8; font-size:12px; margin:12px 0; }
   .att { max-width:100%; border-radius:8px; margin-top:6px; }
+  .att-video { max-width:100%; border-radius:8px; margin-top:6px; }
+  .att-audio { width:100%; margin-top:6px; }
   .filecard { margin-top:6px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px 10px; font-size:13px; }
   .filecard a { color:#7dd3fc; }
   .fmeta { color:#94a3b8; font-size:11px; margin-top:2px; }
@@ -30,6 +34,7 @@
   button { background:#0284c7; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-size:14px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
   #attachBtn { background:#334155; }
+  .iconbtn { background:#334155; }
   #status { font-size:12px; }
   #status.off { color:#f87171; }
   #status:not(.off) { color:#4ade80; }
@@ -50,6 +55,8 @@
   </select>
   <input type="text" id="room" placeholder="Phòng (topic)" style="width:190px">
   <button id="joinBtn">Vào phòng</button>
+  <button id="notifBtn" class="iconbtn" title="Bật thông báo popup khi có tin mới mà tab đang ở nền">🔔 Bật thông báo</button>
+  <button id="soundBtn" class="iconbtn" title="Bật/tắt tiếng bíp khi có tin mới">🔊</button>
   <span id="status" class="off">Đang kết nối…</span>
 </header>
 
@@ -57,9 +64,9 @@
 
 <div id="composer">
   <div class="wrap">
-    <button id="attachBtn" title="Đính kèm file/ảnh">📎</button>
+    <button id="attachBtn" title="Đính kèm file/ảnh/video">📎</button>
     <input type="file" id="fileInput" hidden>
-    <input type="text" id="text" placeholder="Nhắn cho team… (gõ [TASK] để giao việc)">
+    <input type="text" id="text" placeholder="Nhắn cho team… (gõ [TASK] để giao việc, @de-2 để gọi)">
     <button id="sendBtn">Gửi</button>
   </div>
 </div>
@@ -71,6 +78,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_bn9aeCuIkT8FeGzPGUrplQ_JLPusV7T';
 
 let topic = new URLSearchParams(location.search).get('topic') || 'dephu-team-7x3k9q';
 let seen = new Set();
+let ready = false; // chỉ thông báo tin mới SAU khi tải xong lịch sử
+let unread = 0;
+let soundOn = localStorage.getItem('dephu-sound') !== 'off';
+let notifOn = false;
+let audioCtx = null;
+
 const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
 function disp(id){ return DISPLAY[id] || id || 'Ẩn danh'; }
 function asciiName(s){ return s.replace(/[^\x00-\x7F]/g, '_').replace(/[^\w.\-]/g, '_'); }
@@ -84,6 +97,100 @@ function who() { return $('#who').value; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtTime(ts){ const d = new Date(ts*1000); return d.toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}); }
 function fmtSize(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+
+// Chỉ chấp nhận URL https (chặn javascript:/data:/vbscript: và ký tự phá thuộc tính) — vá XSS qua URL đính kèm
+function safeUrl(u){
+  if (!u || typeof u !== 'string') return '';
+  const s = u.trim();
+  if (!/^https:\/\//i.test(s)) return '';
+  if (/[\s"'<>]/.test(s)) return '';
+  return s;
+}
+function kindOf(a){
+  const t = (a.type || '').toLowerCase();
+  if (t.startsWith('image/')) return 'image';
+  if (t.startsWith('video/')) return 'video';
+  if (t.startsWith('audio/')) return 'audio';
+  const n = (a.name || '').toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/.test(n)) return 'image';
+  if (/\.(mp4|webm|mov|mkv|avi)$/.test(n)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a|flac)$/.test(n)) return 'audio';
+  return 'file';
+}
+// Highlight @mention và [TASK] (chạy SAU khi đã escape, nên không tạo được HTML lạ)
+function renderBody(text){
+  let h = esc(text);
+  h = h.replace(/\[TASK\]/g, '<span class="task-tag">[TASK]</span>');
+  h = h.replace(/@(de-phu|de-2|de-3|de-4|chu|all)\b/g, '<span class="mention">@$1</span>');
+  return h;
+}
+
+// ---- Thông báo + tiếng bíp + số tin chưa đọc ----
+function updateTitle(){
+  document.title = unread > 0 ? '(' + unread + ') Đệ Team — Chat nội bộ các Muse' : 'Đệ Team — Chat nội bộ các Muse';
+}
+function ensureAudio(){
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function beep(){
+  if (!soundOn) return;
+  ensureAudio();
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+    o.stop(audioCtx.currentTime + 0.4);
+  } catch(e) {}
+}
+function notify(m){
+  if (!ready) return;
+  if ((m.from || '') === who()) return; // không thông báo tin của chính mình
+  if (!document.hidden) return; // đang nhìn tab rồi thì khỏi báo
+  unread++;
+  updateTitle();
+  beep();
+  if (notifOn && 'Notification' in window && Notification.permission === 'granted') {
+    try {
+      const body = m.message ? m.message : (m.attachment ? 'Đã gửi file: ' + (m.attachment.name || '') : 'Tin mới');
+      new Notification(disp(m.from), { body: body });
+    } catch(e) {}
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { unread = 0; updateTitle(); }
+});
+document.addEventListener('click', ensureAudio);
+document.addEventListener('keydown', ensureAudio);
+
+$('#notifBtn').addEventListener('click', async () => {
+  if (!('Notification' in window)) { alert('Trình duyệt này không hỗ trợ thông báo popup.'); return; }
+  const p = await Notification.requestPermission();
+  if (p === 'granted') {
+    notifOn = true;
+    $('#notifBtn').textContent = '🔔 Đã bật thông báo';
+    alert('Đã bật thông báo. Khi có tin mới mà tab đang ở nền, sẽ hiện popup + kêu bíp, quay lại tab là thấy ngay.');
+  } else {
+    alert('Chưa cấp quyền thông báo. Bấm vào biểu tượng ổ khóa trên thanh địa chỉ để cho phép thông báo cho trang này.');
+  }
+});
+if ('Notification' in window && Notification.permission === 'granted') {
+  notifOn = true;
+  $('#notifBtn').textContent = '🔔 Đã bật thông báo';
+}
+function updateSoundBtn(){ $('#soundBtn').textContent = soundOn ? '🔊' : '🔇'; }
+$('#soundBtn').addEventListener('click', () => {
+  soundOn = !soundOn;
+  localStorage.setItem('dephu-sound', soundOn ? 'on' : 'off');
+  updateSoundBtn();
+  if (soundOn) beep();
+});
+updateSoundBtn();
 
 let sb = null;
 function setStatus(ok, extra){
@@ -99,19 +206,25 @@ function addMsg(m){
   div.className = 'msg' + (me ? ' me' : '');
   const sender = esc(disp(m.from));
   let html = '<div class="who-line">' + sender + '</div>';
-  if (m.message) html += '<div class="body">' + esc(m.message) + '</div>';
+  if (m.message) html += '<div class="body">' + renderBody(m.message) + '</div>';
   if (m.attachment) {
     const a = m.attachment;
-    const url = a.url;
-    const isImg = (a.type || '').startsWith('image/');
-    if (isImg) html += '<a href="' + url + '" target="_blank" rel="noopener"><img class="att" src="' + url + '" alt="' + esc(a.name||'ảnh') + '"></a>';
-    html += '<div class="filecard">📎 <a href="' + url + '" target="_blank" rel="noopener">' + esc(a.name || 'file đính kèm') + '</a><div class="fmeta">' + fmtSize(a.size || 0) + ' · bấm để tải về</div></div>';
+    const url = safeUrl(a.url);
+    if (url) {
+      const kind = kindOf(a);
+      const u = esc(url);
+      if (kind === 'image') html += '<a href="' + u + '" target="_blank" rel="noopener"><img class="att" src="' + u + '" alt="' + esc(a.name||'ảnh') + '" loading="lazy"></a>';
+      else if (kind === 'video') html += '<video class="att-video" src="' + u + '" controls preload="metadata"></video>';
+      else if (kind === 'audio') html += '<audio class="att-audio" src="' + u + '" controls preload="metadata"></audio>';
+      html += '<div class="filecard">📎 <a href="' + u + '" target="_blank" rel="noopener">' + esc(a.name || 'file đính kèm') + '</a><div class="fmeta">' + fmtSize(a.size || 0) + ' · bấm để tải về</div></div>';
+    }
   }
   html += '<div class="time">' + fmtTime(m.time) + '</div>';
   div.innerHTML = html;
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
   setStatus(true);
+  notify(m);
 }
 
 function sysMsg(t){
@@ -191,7 +304,7 @@ $('#joinBtn').addEventListener('click', () => {
 const savedWho = localStorage.getItem('dephu-who');
 if (savedWho) { const o = [...$('#who').options].find(x => x.value === savedWho); if (o) $('#who').value = savedWho; }
 
-sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()));
+sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()) + '. Bấm "🔔 Bật thông báo" để có popup + tiếng bíp khi tin mới tới lúc tab đang ở nền.');
 
 if (!window.supabase) {
   setStatus(false, 'không tải được thư viện Supabase');
@@ -199,6 +312,7 @@ if (!window.supabase) {
   sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   loadHistory().then(ok => {
     if (!ok) return;
+    ready = true; // từ giờ tin mới sẽ kêu thông báo
     // Realtime: tin mới hiện ngay
     sb.channel('dephu-team-' + topic)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })

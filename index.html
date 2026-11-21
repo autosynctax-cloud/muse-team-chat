@@ -76,13 +76,25 @@
 const SUPABASE_URL = 'https://jgbijkwsvcfuceksvwsh.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_bn9aeCuIkT8FeGzPGUrplQ_JLPusV7T';
 
+// localStorage an toàn (chế độ ẩn danh có thể ném lỗi — không để nó giết cả trang)
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+};
+
 let topic = new URLSearchParams(location.search).get('topic') || 'dephu-team-7x3k9q';
+// Tên phòng chỉ cho phép chữ/số/gạch (để Realtime filter không bị phá)
+if (!/^[A-Za-z0-9_-]+$/.test(topic)) topic = topic.replace(/[^A-Za-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'dephu-team-7x3k9q';
 let seen = new Set();
+let sentIds = new Set(); // id tin do chính mình gửi (để không tự thông báo)
+let lastTime = 0; // thời gian lớn nhất đã thấy (để poll tăng dần)
 let ready = false; // chỉ thông báo tin mới SAU khi tải xong lịch sử
+let loadingHistory = false; // đang tải lịch sử — bỏ qua cuộn/trạng thái từng tin
 let unread = 0;
-let soundOn = localStorage.getItem('dephu-sound') !== 'off';
+let soundOn = store.get('dephu-sound') !== 'off';
 let notifOn = false;
 let audioCtx = null;
+let sending = false;
 
 const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
 function disp(id){ return DISPLAY[id] || id || 'Ẩn danh'; }
@@ -94,8 +106,9 @@ const statusEl = $('#status');
 $('#room').value = topic;
 
 function who() { return $('#who').value; }
-function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function fmtTime(ts){ const d = new Date(ts*1000); return d.toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}); }
+// Escape cả " và ' (vá XSS qua thuộc tính alt của ảnh đính kèm)
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function fmtTime(ts){ if (!ts || isNaN(+ts)) return '—'; const d = new Date(ts*1000); return isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}); }
 function fmtSize(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
 
 // Chỉ chấp nhận URL https (chặn javascript:/data:/vbscript: và ký tự phá thuộc tính) — vá XSS qua URL đính kèm
@@ -125,6 +138,12 @@ function renderBody(text){
   return h;
 }
 
+// Cuộn trang xuống cuối — chỉ khi người dùng đang ở gần cuối (không giật lúc đang đọc lịch sử)
+function scrollBottom(){
+  const nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 200;
+  if (nearBottom) window.scrollTo(0, document.documentElement.scrollHeight);
+}
+
 // ---- Thông báo + tiếng bíp + số tin chưa đọc ----
 function updateTitle(){
   document.title = unread > 0 ? '(' + unread + ') Đệ Team — Chat nội bộ các Muse' : 'Đệ Team — Chat nội bộ các Muse';
@@ -150,7 +169,7 @@ function beep(){
 }
 function notify(m){
   if (!ready) return;
-  if ((m.from || '') === who()) return; // không thông báo tin của chính mình
+  if (sentIds.has(m.id)) return; // tin do chính mình gửi
   if (!document.hidden) return; // đang nhìn tab rồi thì khỏi báo
   unread++;
   updateTitle();
@@ -158,17 +177,19 @@ function notify(m){
   if (notifOn && 'Notification' in window && Notification.permission === 'granted') {
     try {
       const body = m.message ? m.message : (m.attachment ? 'Đã gửi file: ' + (m.attachment.name || '') : 'Tin mới');
-      new Notification(disp(m.from), { body: body });
+      const n = new Notification(disp(m.from), { body: body, tag: 'dephu-team', renotify: true });
+      n.onclick = () => { window.focus(); n.close(); };
     } catch(e) {}
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { unread = 0; updateTitle(); }
+  if (!document.hidden) { unread = 0; updateTitle(); ensureAudio(); }
 });
 document.addEventListener('click', ensureAudio);
 document.addEventListener('keydown', ensureAudio);
 
 $('#notifBtn').addEventListener('click', async () => {
+  ensureAudio();
   if (!('Notification' in window)) { alert('Trình duyệt này không hỗ trợ thông báo popup.'); return; }
   const p = await Notification.requestPermission();
   if (p === 'granted') {
@@ -186,7 +207,7 @@ if ('Notification' in window && Notification.permission === 'granted') {
 function updateSoundBtn(){ $('#soundBtn').textContent = soundOn ? '🔊' : '🔇'; }
 $('#soundBtn').addEventListener('click', () => {
   soundOn = !soundOn;
-  localStorage.setItem('dephu-sound', soundOn ? 'on' : 'off');
+  store.set('dephu-sound', soundOn ? 'on' : 'off');
   updateSoundBtn();
   if (soundOn) beep();
 });
@@ -198,10 +219,20 @@ function setStatus(ok, extra){
   else { statusEl.classList.add('off'); statusEl.textContent = 'Mất kết nối' + (extra ? ' (' + extra + ')' : '') + ' — đang thử lại…'; }
 }
 
+function pruneDom(){
+  // Giữ tối đa ~200 tin trong DOM để trang không nặng dần
+  const nodes = chatEl.querySelectorAll('.msg');
+  if (nodes.length > 200) {
+    const excess = nodes.length - 200;
+    for (let i = 0; i < excess; i++) nodes[i].remove();
+  }
+}
+
 function addMsg(m){
   if (!m || !m.id || seen.has(m.id)) return;
   seen.add(m.id);
-  const me = (m.from || '') === who();
+  if (m.time && +m.time > lastTime) lastTime = +m.time;
+  const me = sentIds.has(m.id) || (m.from || '') === who();
   const div = document.createElement('div');
   div.className = 'msg' + (me ? ' me' : '');
   const sender = esc(disp(m.from));
@@ -222,8 +253,8 @@ function addMsg(m){
   html += '<div class="time">' + fmtTime(m.time) + '</div>';
   div.innerHTML = html;
   chatEl.appendChild(div);
-  chatEl.scrollTop = chatEl.scrollHeight;
-  setStatus(true);
+  pruneDom();
+  if (!loadingHistory) { scrollBottom(); setStatus(true); }
   notify(m);
 }
 
@@ -231,20 +262,27 @@ function sysMsg(t){
   const d = document.createElement('div');
   d.className = 'sys'; d.textContent = t;
   chatEl.appendChild(d);
-  chatEl.scrollTop = chatEl.scrollHeight;
+  scrollBottom();
+  return d;
 }
 
 async function loadHistory(){
-  const { data, error } = await sb.from('messages').select('*').eq('room', topic).order('time', { ascending: true }).limit(300);
+  // Lấy 300 tin MỚI nhất (mới → cũ), rồi đảo lại để hiện theo thứ tự thời gian
+  const { data, error } = await sb.from('messages').select('*').eq('room', topic).order('time', { ascending: false }).limit(300);
   if (error) { setStatus(false, error.message); return false; }
-  (data || []).forEach(addMsg);
+  loadingHistory = true;
+  (data || []).reverse().forEach(addMsg);
+  loadingHistory = false;
+  scrollBottom();
   setStatus(true);
   return true;
 }
 
 async function poll(){
-  // Dự phòng khi Realtime rớt: hỏi lại lịch sử, chỉ thêm tin mới (đã có seen)
-  const { data, error } = await sb.from('messages').select('*').eq('room', topic).order('time', { ascending: true }).limit(300);
+  // Poll tăng dần: chỉ lấy tin mới hơn tin mới nhất đã thấy (rẻ + không bỏ sót)
+  let q = sb.from('messages').select('*').eq('room', topic).order('time', { ascending: true }).limit(300);
+  if (lastTime > 0) q = q.gte('time', lastTime - 1);
+  const { data, error } = await q;
   if (error) { setStatus(false, error.message); return; }
   (data || []).forEach(addMsg);
   setStatus(true);
@@ -252,26 +290,35 @@ async function poll(){
 
 async function sendText(){
   const t = $('#text').value.trim();
-  if (!t) return;
+  if (!t || sending) return; // chống gửi trùng khi bấm Enter 2 lần nhanh
+  sending = true;
+  $('#text').value = ''; // xóa ngay để không gửi trùng
   const btn = $('#sendBtn');
   btn.disabled = true;
   try {
     const now = Math.floor(Date.now()/1000);
     const id = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6);
+    sentIds.add(id);
     const { error } = await sb.from('messages').insert({ id: id, from: who(), time: now, message: t, room: topic, attachment: null });
     if (error) throw new Error(error.message);
-    $('#text').value = '';
     // Realtime sẽ đẩy tin về; nếu Realtime chưa kịp, poll sau 1s
     setTimeout(poll, 1000);
-  } catch(e) { alert('Gửi lỗi: ' + e.message); }
+  } catch(e) {
+    $('#text').value = t; // gửi lỗi thì trả lại nội dung cho người dùng
+    alert('Gửi lỗi: ' + e.message);
+  }
   btn.disabled = false;
+  sending = false;
   $('#text').focus();
 }
 
+// Chặn file nguy hiểm up lên bucket public (.html/.svg chạy được script khi mở trực tiếp)
+const BLOCKED_EXT = /\.(html?|svg|js|mjs|exe|bat|cmd|sh|php|jsp|asp|aspx|jar|msi|scr|com|vbs|ps1)$/i;
 async function sendFile(file){
   if (!file) return;
   if (file.size > 25*1024*1024) { alert('File lớn hơn 25MB — up lên GitHub Release rồi dán link vào chat nhé.'); return; }
-  sysMsg('Đang tải lên ' + file.name + ' (' + fmtSize(file.size) + ')…');
+  if (BLOCKED_EXT.test(file.name)) { alert('Không cho up file .' + file.name.split('.').pop() + ' (có thể chạy mã độc khi mở trực tiếp). Nén thành .zip rồi up nhé.'); return; }
+  const upEl = sysMsg('Đang tải lên ' + file.name + ' (' + fmtSize(file.size) + ')…');
   try {
     const now = Math.floor(Date.now()/1000);
     const safe = asciiName(file.name) || 'file';
@@ -281,10 +328,15 @@ async function sendFile(file){
     const { data: pub } = sb.storage.from('chat-files').getPublicUrl(path);
     const url = pub.publicUrl;
     const id = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6);
+    sentIds.add(id);
     const { error } = await sb.from('messages').insert({ id: id, from: who(), time: now, message: '', room: topic, attachment: { name: file.name, url: url, size: file.size, type: file.type || '' } });
     if (error) throw new Error(error.message);
+    if (upEl) upEl.remove();
     setTimeout(poll, 1000);
-  } catch(e) { alert('Tải file lỗi: ' + e.message); }
+  } catch(e) {
+    if (upEl) upEl.textContent = 'Tải file lỗi: ' + file.name + ' — ' + e.message;
+    alert('Tải file lỗi: ' + e.message);
+  }
 }
 
 $('#sendBtn').addEventListener('click', sendText);
@@ -292,7 +344,7 @@ $('#text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText();
 $('#attachBtn').addEventListener('click', () => $('#fileInput').click());
 $('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value=''; });
 $('#who').addEventListener('change', () => {
-  localStorage.setItem('dephu-who', $('#who').value);
+  store.set('dephu-who', $('#who').value);
   sysMsg('Bạn đang chat với tên: ' + disp($('#who').value));
 });
 $('#joinBtn').addEventListener('click', () => {
@@ -301,26 +353,46 @@ $('#joinBtn').addEventListener('click', () => {
   location.search = '?topic=' + encodeURIComponent(t);
 });
 
-const savedWho = localStorage.getItem('dephu-who');
+const savedWho = store.get('dephu-who');
 if (savedWho) { const o = [...$('#who').options].find(x => x.value === savedWho); if (o) $('#who').value = savedWho; }
 
 sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()) + '. Bấm "🔔 Bật thông báo" để có popup + tiếng bíp khi tin mới tới lúc tab đang ở nền.');
 
-if (!window.supabase) {
-  setStatus(false, 'không tải được thư viện Supabase');
-} else {
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  loadHistory().then(ok => {
-    if (!ok) return;
-    ready = true; // từ giờ tin mới sẽ kêu thông báo
-    // Realtime: tin mới hiện ngay
-    sb.channel('dephu-team-' + topic)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
-      .subscribe();
-    // Dự phòng: hỏi lại mỗi 15s nếu Realtime rớt
-    setInterval(poll, 15000);
+function loadSupabaseScript(){
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
   });
 }
+
+// Khởi động có thử lại (CDN lỗi / mạng chập chờn cũng tự hồi, không bắt refresh tay)
+async function boot(attempt){
+  if (!window.supabase) {
+    try { await loadSupabaseScript(); } catch(e) {}
+  }
+  if (!window.supabase) {
+    setStatus(false, 'không tải được thư viện Supabase');
+    if (attempt < 5) setTimeout(() => boot(attempt + 1), [2000, 5000, 15000, 30000, 60000][attempt] || 60000);
+    return;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const ok = await loadHistory();
+  if (!ok) {
+    if (attempt < 5) setTimeout(() => boot(attempt + 1), [2000, 5000, 15000, 30000, 60000][attempt] || 60000);
+    return;
+  }
+  ready = true; // từ giờ tin mới sẽ kêu thông báo
+  // Realtime: tin mới hiện ngay
+  sb.channel('dephu-team-' + topic)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
+    .subscribe();
+  // Dự phòng: hỏi lại mỗi 15s nếu Realtime rớt
+  setInterval(poll, 15000);
+}
+boot(0);
 </script>
 </body>
 </html>

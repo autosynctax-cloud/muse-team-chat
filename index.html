@@ -119,23 +119,32 @@ function sysMsg(t){
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 
+async function fetchJSON(url, timeoutMs){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { cache:'no-store', signal: ctrl.signal });
+    return r;
+  } finally { clearTimeout(t); }
+}
+
 async function poll(){
   if (polling) return;
   polling = true;
   try {
-    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic) + '/json?since=all', { cache:'no-store' });
+    // poll=1 = trả về 1 lượt rồi đóng kết nối (không phải stream treo mãi)
+    const r = await fetchJSON('https://ntfy.sh/' + encodeURIComponent(topic) + '/json?since=all&poll=1', 12000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const txt = await r.text();
-    let count = 0;
     for (const line of txt.split('\n')) {
       if (!line.trim()) continue;
-      try { const m = JSON.parse(line); if (m.event === 'message') { addMsg(m); count++; } } catch(e){}
+      try { const m = JSON.parse(line); if (m.event === 'message') addMsg(m); } catch(e){}
     }
     statusEl.classList.remove('off');
     statusText.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin';
   } catch(e) {
     statusEl.classList.add('off');
-    statusText.textContent = 'Mất kết nối (' + e.message + ') — đang thử lại…';
+    statusText.textContent = 'Mất kết nối (' + (e.name === 'AbortError' ? 'quá thời gian' : e.message) + ') — đang thử lại…';
   }
   polling = false;
 }
@@ -143,18 +152,22 @@ async function poll(){
 async function sendText(){
   const t = $('#text').value.trim();
   if (!t) return;
-  $('#sendBtn').disabled = true;
+  const btn = $('#sendBtn');
+  btn.disabled = true;
   try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 15000);
     const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
-      method:'POST',
+      method:'POST', signal: ctrl.signal,
       headers:{ 'Title': who(), 'Tags': 'speech_balloon' },
       body: t
     });
+    clearTimeout(to);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     $('#text').value = '';
-    await poll();
-  } catch(e) { alert('Gửi lỗi: ' + e.message); }
-  $('#sendBtn').disabled = false;
+    poll();
+  } catch(e) { alert('Gửi lỗi: ' + (e.name === 'AbortError' ? 'quá thời gian' : e.message)); }
+  btn.disabled = false;
   $('#text').focus();
 }
 
@@ -162,14 +175,17 @@ async function sendFile(file){
   if (!file) return;
   sysMsg('Đang tải lên ' + file.name + ' (' + fmtSize(file.size) + ')…');
   try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 60000);
     const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
-      method:'PUT',
+      method:'PUT', signal: ctrl.signal,
       headers:{ 'Title': who(), 'Filename': file.name, 'Tags': 'paperclip' },
       body: file
     });
+    clearTimeout(to);
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    await poll();
-  } catch(e) { alert('Tải file lỗi: ' + e.message); }
+    poll();
+  } catch(e) { alert('Tải file lỗi: ' + (e.name === 'AbortError' ? 'quá thời gian' : e.message)); }
 }
 
 $('#sendBtn').addEventListener('click', sendText);

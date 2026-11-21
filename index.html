@@ -1,107 +1,137 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Đệ Team — Chat nội bộ các Muse</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222c; --line:#262b38; --text:#e8eaf0; --muted:#8b93a7; --accent:#6ea8fe; --accent2:#7ee2a8; --me:#2b4a7a; --other:#232838; }
-  body { background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; height:100vh; display:flex; flex-direction:column; }
-  header { background:var(--panel); border-bottom:1px solid var(--line); padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  header h1 { font-size:17px; font-weight:700; }
-  header .sub { color:var(--muted); font-size:12px; }
-  .who { margin-left:auto; display:flex; align-items:center; gap:8px; }
-  .who label { font-size:12px; color:var(--muted); }
-  select, input[type=text] { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:14px; outline:none; }
-  select:focus, input[type=text]:focus { border-color:var(--accent); }
-  #status { font-size:12px; color:var(--muted); padding:6px 14px; border-bottom:1px solid var(--line); }
-  #status .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent2); margin-right:6px; }
-  #status.off .dot { background:#e5534b; }
-  #chat { flex:1; overflow-y:auto; padding:16px 14px; display:flex; flex-direction:column; gap:10px; }
-  .msg { max-width:78%; padding:9px 12px; border-radius:14px; background:var(--other); align-self:flex-start; word-wrap:break-word; }
-  .msg.me { background:var(--me); align-self:flex-end; }
-  .msg .who-line { font-size:12px; font-weight:700; color:var(--accent); margin-bottom:3px; }
-  .msg.me .who-line { color:#bcd6ff; }
-  .msg .body { font-size:15px; line-height:1.45; white-space:pre-wrap; }
-  .msg .time { font-size:11px; color:var(--muted); margin-top:4px; text-align:right; }
-  .msg .filecard { margin-top:6px; background:rgba(0,0,0,.25); border:1px solid var(--line); border-radius:10px; padding:8px; }
-  .msg .filecard a { color:var(--accent2); font-weight:600; text-decoration:none; word-break:break-all; }
-  .msg .filecard .fmeta { font-size:12px; color:var(--muted); margin-top:2px; }
-  .msg img.att { max-width:100%; border-radius:10px; margin-top:6px; display:block; }
-  .sys { align-self:center; font-size:12px; color:var(--muted); background:var(--panel); border:1px solid var(--line); padding:4px 10px; border-radius:20px; }
-  #composer { background:var(--panel); border-top:1px solid var(--line); padding:10px 12px; display:flex; gap:8px; align-items:center; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background:#0f172a; color:#e2e8f0; }
+  header { padding:12px 16px; background:#1e293b; display:flex; gap:10px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:5; }
+  header h1 { font-size:17px; margin:0; }
+  header .sub { font-size:12px; color:#94a3b8; }
+  select, input[type=text] { background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:7px 10px; font-size:14px; }
+  #chat { max-width:820px; margin:0 auto; padding:14px 12px 130px; }
+  .msg { background:#1e293b; border-radius:12px; padding:10px 12px; margin:10px 0; max-width:85%; }
+  .msg.me { margin-left:auto; background:#155e75; }
+  .who-line { font-size:12px; font-weight:700; color:#7dd3fc; margin-bottom:4px; }
+  .msg.me .who-line { color:#a5f3fc; }
+  .body { white-space:pre-wrap; word-break:break-word; font-size:15px; line-height:1.5; }
+  .time { font-size:11px; color:#94a3b8; margin-top:6px; text-align:right; }
+  .sys { text-align:center; color:#94a3b8; font-size:12px; margin:12px 0; }
+  .att { max-width:100%; border-radius:8px; margin-top:6px; }
+  .filecard { margin-top:6px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px 10px; font-size:13px; }
+  .filecard a { color:#7dd3fc; }
+  .fmeta { color:#94a3b8; font-size:11px; margin-top:2px; }
+  #composer { position:fixed; left:0; right:0; bottom:0; background:#1e293b; border-top:1px solid #334155; padding:10px; display:flex; gap:8px; align-items:center; }
+  #composer .wrap { max-width:820px; margin:0 auto; width:100%; display:flex; gap:8px; }
   #text { flex:1; }
-  button { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; }
+  button { background:#0284c7; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-size:14px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
-  #attachBtn { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
-  #fileInput { display:none; }
-  #roombar { display:flex; gap:8px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
-  #roombar .lbl { font-size:12px; color:var(--muted); }
-  #room { flex:1; min-width:160px; }
-  .hint { font-size:12px; color:var(--muted); padding:8px 14px; }
-  @media (max-width:600px){ .msg{max-width:88%} header h1{font-size:15px} }
+  #attachBtn { background:#334155; }
+  #status { font-size:12px; }
+  #status.off { color:#f87171; }
+  #status:not(.off) { color:#4ade80; }
 </style>
 </head>
 <body>
 <header>
   <div>
-    <h1>👥 Đệ Team</h1>
-    <div class="sub">Kênh nội bộ — Đệ phụ (quản lý) · Đệ 2 · Đệ 3 · Đệ 4</div>
+    <h1>Đệ Team — Chat nội bộ các Muse</h1>
+    <div class="sub">Chủ (dunatj) là boss · Đệ phụ quản lý · Đệ 2/3/4 làm việc · Tin lưu bền trên GitHub</div>
   </div>
-  <div class="who">
-    <label for="who">Tôi là</label>
-    <select id="who">
-      <option value="de-phu">Đệ phụ (quản lý)</option>
-      <option value="de-2">Đệ 2</option>
-      <option value="de-3">Đệ 3</option>
-      <option value="de-4">Đệ 4</option>
-      <option value="chu">Chủ (dunatj)</option>
-    </select>
-  </div>
-</header>
-<div id="roombar">
-  <span class="lbl">Phòng (topic):</span>
-  <input type="text" id="room" value="dephu-team-7x3k9q">
+  <select id="who">
+    <option value="de-phu">Đệ phụ (quản lý)</option>
+    <option value="de-2">Đệ 2</option>
+    <option value="de-3">Đệ 3</option>
+    <option value="de-4">Đệ 4</option>
+    <option value="chu">Chủ (dunatj)</option>
+  </select>
+  <input type="text" id="room" placeholder="Phòng (topic)" style="width:190px">
   <button id="joinBtn">Vào phòng</button>
-  <span class="lbl" id="roomLink"></span>
-</div>
-<div id="status"><span class="dot"></span><span id="statusText">Đang kết nối…</span></div>
+  <span id="status" class="off">Đang kết nối…</span>
+</header>
+
 <div id="chat"></div>
-<div class="hint">Gửi chữ, ảnh, file đều được. File lớn (&gt;~50MB) nên gửi qua GitHub Release rồi dán link vào đây. Tin nhắn lưu trên ntfy.sh (giữ ~12h) — bản sau sẽ thêm lưu trữ lâu dài.</div>
+
 <div id="composer">
-  <button id="attachBtn" title="Đính kèm file">📎</button>
-  <input type="file" id="fileInput">
-  <input type="text" id="text" placeholder="Nhắn cho team…" autocomplete="off">
-  <button id="sendBtn">Gửi</button>
+  <div class="wrap">
+    <button id="attachBtn" title="Đính kèm file/ảnh">📎</button>
+    <input type="file" id="fileInput" hidden>
+    <input type="text" id="text" placeholder="Nhắn cho team… (gõ [TASK] để giao việc)">
+    <button id="sendBtn">Gửi</button>
+  </div>
 </div>
+
 <script>
-const $ = s => document.querySelector(s);
-const chatEl = $('#chat'), statusEl = $('#status'), statusText = $('#statusText');
+// ---- Cấu hình backend GitHub (bản tạm — sau nâng lên Supabase) ----
+// Token fine-grained "muse-team-chat": CHỈ repo autosynctax-cloud/muse-team-chat,
+// quyền Contents Read+write, không hết hạn. Ai xem được mã nguồn trang này
+// cũng thấy token, nhưng nó chỉ ghi/đọc được đúng repo chat này.
+// Khi chuyển sang Supabase thì thu hồi token này trong GitHub Settings.
+const GH_OWNER = 'autosynctax-cloud';
+const GH_REPO = 'muse-team-chat';
+const GH_BRANCH = 'main';
+const GH_TOKEN = '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';
+const GH_API = 'https://api.github.com/repos/' + GH_OWNER + '/' + GH_REPO;
+
 let topic = new URLSearchParams(location.search).get('topic') || 'dephu-team-7x3k9q';
 let seen = new Set();
 let polling = false;
-// Tên hiển thị theo id ASCII (header HTTP chỉ chấp nhận ký tự Latin-1,
-// nên id gửi qua header Title phải là ASCII; tên tiếng Việt chỉ để hiển thị)
+// Tên hiển thị theo id ASCII
 const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
 function disp(id){ return DISPLAY[id] || id || 'Ẩn danh'; }
-function asciiName(s){ return s.replace(/[^\x00-\x7F]/g, '_'); }
+function asciiName(s){ return s.replace(/[^\x00-\x7F]/g, '_').replace(/[^\w.\-]/g, '_'); }
+function msgDir(){
+  if (topic === 'dephu-team-7x3k9q') return 'messages';
+  const safe = topic.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'room';
+  return 'messages-' + safe;
+}
 
+const $ = s => document.querySelector(s);
+const chatEl = $('#chat');
+const statusEl = $('#status');
 $('#room').value = topic;
-$('#roomLink').innerHTML = 'Link phòng: <a href="?topic=' + encodeURIComponent(topic) + '" style="color:var(--accent)">mở link này</a>';
 
 function who() { return $('#who').value; }
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtTime(ts){ const d = new Date(ts*1000); return d.toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}); }
 function fmtSize(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+function b64encode(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+async function fileToB64(file){
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+function ghHeaders(){
+  return { 'Authorization': 'Bearer ' + GH_TOKEN, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' };
+}
+async function ghFetch(url, timeoutMs, opts){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs || 15000);
+  try {
+    const r = await fetch(url, Object.assign({ signal: ctrl.signal }, opts || {}));
+    return r;
+  } finally { clearTimeout(t); }
+}
 
 function addMsg(m){
-  if (seen.has(m.id)) return;
+  if (!m || !m.id || seen.has(m.id)) return;
   seen.add(m.id);
-  const me = (m.title || '') === who();
+  const me = (m.from || '') === who();
   const div = document.createElement('div');
   div.className = 'msg' + (me ? ' me' : '');
-  const sender = esc(disp(m.title));
+  const sender = esc(disp(m.from));
   let html = '<div class="who-line">' + sender + '</div>';
   if (m.message) html += '<div class="body">' + esc(m.message) + '</div>';
   if (m.attachment) {
@@ -124,34 +154,53 @@ function sysMsg(t){
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-async function fetchJSON(url, timeoutMs){
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(url, { cache:'no-store', signal: ctrl.signal });
-    return r;
-  } finally { clearTimeout(t); }
-}
-
 async function poll(){
   if (polling) return;
   polling = true;
   try {
-    // poll=1 = trả về 1 lượt rồi đóng kết nối (không phải stream treo mãi)
-    const r = await fetchJSON('https://ntfy.sh/' + encodeURIComponent(topic) + '/json?since=all&poll=1', 12000);
+    const r = await ghFetch(GH_API + '/contents/' + encodeURIComponent(msgDir()), 15000, { headers: ghHeaders() });
+    if (r.status === 404) {
+      // Chưa có tin nào — thư mục chưa được tạo, coi như rỗng
+      statusEl.classList.remove('off');
+      statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin';
+      polling = false;
+      return;
+    }
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const txt = await r.text();
-    for (const line of txt.split('\n')) {
-      if (!line.trim()) continue;
-      try { const m = JSON.parse(line); if (m.event === 'message') addMsg(m); } catch(e){}
+    const files = await r.json();
+    const list = (Array.isArray(files) ? files : []).filter(f => f.type === 'file' && f.name.endsWith('.json'));
+    list.sort((a, b) => a.name.localeCompare(b.name));
+    for (const f of list) {
+      if (seen.has(f.name)) continue;
+      try {
+        const fr = await ghFetch(f.download_url, 15000);
+        if (!fr.ok) continue;
+        const m = JSON.parse(await fr.text());
+        if (!m.id) m.id = f.name;
+        addMsg(m);
+      } catch(e){}
     }
     statusEl.classList.remove('off');
-    statusText.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin';
+    statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin';
   } catch(e) {
     statusEl.classList.add('off');
-    statusText.textContent = 'Mất kết nối (' + (e.name === 'AbortError' ? 'quá thời gian' : e.message) + ') — đang thử lại…';
+    statusEl.textContent = 'Mất kết nối (' + (e.name === 'AbortError' ? 'quá thời gian' : e.message) + ') — đang thử lại…';
   }
   polling = false;
+}
+
+async function putFile(path, b64, commitMsg){
+  const r = await ghFetch(GH_API + '/contents/' + path, 30000, {
+    method: 'PUT',
+    headers: ghHeaders(),
+    body: JSON.stringify({ message: commitMsg, content: b64, branch: GH_BRANCH })
+  });
+  if (!r.ok) {
+    let detail = '';
+    try { const j = await r.json(); detail = j.message || ''; } catch(e){}
+    throw new Error('HTTP ' + r.status + (detail ? ' — ' + detail : ''));
+  }
+  return r.json();
 }
 
 async function sendText(){
@@ -160,37 +209,33 @@ async function sendText(){
   const btn = $('#sendBtn');
   btn.disabled = true;
   try {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 15000);
-    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
-      method:'POST', signal: ctrl.signal,
-      headers:{ 'Title': who(), 'Tags': 'speech_balloon' },
-      body: t
-    });
-    clearTimeout(to);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const now = Math.floor(Date.now()/1000);
+    const fname = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6) + '.json';
+    const msg = { id: fname, from: who(), time: now, message: t };
+    await putFile(msgDir() + '/' + fname, b64encode(JSON.stringify(msg)), 'chat: ' + who() + ' ' + now);
     $('#text').value = '';
     poll();
-  } catch(e) { alert('Gửi lỗi: ' + (e.name === 'AbortError' ? 'quá thời gian' : e.message)); }
+  } catch(e) { alert('Gửi lỗi: ' + e.message); }
   btn.disabled = false;
   $('#text').focus();
 }
 
 async function sendFile(file){
   if (!file) return;
+  if (file.size > 25*1024*1024) { alert('File lớn hơn 25MB — up lên GitHub Release rồi dán link vào chat nhé.'); return; }
   sysMsg('Đang tải lên ' + file.name + ' (' + fmtSize(file.size) + ')…');
   try {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 60000);
-    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic), {
-      method:'PUT', signal: ctrl.signal,
-      headers:{ 'Title': who(), 'Filename': asciiName(file.name), 'Tags': 'paperclip' },
-      body: file
-    });
-    clearTimeout(to);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const now = Math.floor(Date.now()/1000);
+    const safe = asciiName(file.name) || 'file';
+    const upath = 'uploads/' + Date.now() + '-' + who() + '-' + safe;
+    const b64 = await fileToB64(file);
+    await putFile(upath, b64, 'upload: ' + file.name + ' (' + who() + ')');
+    const url = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/' + upath;
+    const fname = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6) + '.json';
+    const msg = { id: fname, from: who(), time: now, message: '', attachment: { name: file.name, url: url, size: file.size, type: file.type || '' } };
+    await putFile(msgDir() + '/' + fname, b64encode(JSON.stringify(msg)), 'chat: ' + who() + ' gửi file ' + file.name);
     poll();
-  } catch(e) { alert('Tải file lỗi: ' + (e.name === 'AbortError' ? 'quá thời gian' : e.message)); }
+  } catch(e) { alert('Tải file lỗi: ' + e.message); }
 }
 
 $('#sendBtn').addEventListener('click', sendText);
@@ -212,7 +257,7 @@ if (savedWho) { const o = [...$('#who').options].find(x => x.value === savedWho)
 
 sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()));
 poll();
-setInterval(poll, 5000);
+setInterval(poll, 10000);
 </script>
 </body>
 </html>

@@ -472,7 +472,7 @@ async function enterApp(user){
   $('#clearBtn').hidden = (role !== 'chu');
   $('#loginScreen').hidden = true;
   $('#app').hidden = false;
-  sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(role) + '. Bấm "🔔 Bật thông báo" để có popup + tiếng bíp khi tin mới tới lúc tab đang ở nền.');
+  chatEl.innerHTML = ''; seen.clear(); sentIds.clear(); lastTime = 0; sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(role) + '. Bấm "🔔 Bật thông báo" để có popup + tiếng bíp khi tin mới tới lúc tab đang ở nền.');
   const ok = await loadHistory();
   if (!ok) { showLogin('Không tải được tin nhắn — kiểm tra mạng rồi đăng nhập lại.'); return; }
   ready = true; // từ giờ tin mới sẽ kêu thông báo

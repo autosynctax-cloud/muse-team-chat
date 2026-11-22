@@ -7,32 +7,52 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background:#0f172a; color:#e2e8f0; }
-  header { padding:12px 16px; background:#1e293b; display:flex; gap:10px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:5; }
+  body { margin:0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background:#0b1220; color:#e2e8f0; }
+  /* ---------- Màn hình đăng nhập ---------- */
+  #loginScreen { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; background:radial-gradient(600px 400px at 50% 20%, #12233d 0%, #0b1220 70%); }
+  .login-card { width:100%; max-width:380px; background:#111c2e; border:1px solid #1e3a5f; border-radius:18px; padding:28px 24px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .login-card h1 { margin:0 0 4px; font-size:24px; text-align:center; }
+  .login-card .login-sub { text-align:center; color:#94a3b8; font-size:13px; margin:0 0 20px; }
+  .login-card input { width:100%; background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:10px; padding:11px 12px; font-size:15px; margin-bottom:10px; }
+  .login-card input:focus { outline:2px solid #0284c7; border-color:#0284c7; }
+  .login-card button { width:100%; background:#0284c7; color:#fff; border:0; border-radius:10px; padding:12px; font-size:15px; font-weight:700; cursor:pointer; }
+  .login-card button:disabled { opacity:.5; cursor:default; }
+  #loginErr { color:#f87171; font-size:13px; min-height:18px; margin-top:10px; text-align:center; }
+  .login-hint { color:#64748b; font-size:12px; text-align:center; margin:14px 0 0; line-height:1.5; }
+  /* ---------- Khung chat ---------- */
+  header { padding:10px 16px; background:#111c2e; border-bottom:1px solid #1e3a5f; display:flex; gap:8px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:5; }
   header h1 { font-size:17px; margin:0; }
   header .sub { font-size:12px; color:#94a3b8; }
-  select, input[type=text] { background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:7px 10px; font-size:14px; }
+  .who-badge { font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; color:#fff; }
+  select, input[type=text] { background:#0b1220; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:7px 10px; font-size:14px; }
   #chat { max-width:820px; margin:0 auto; padding:14px 12px 130px; }
-  .msg { background:#1e293b; border-radius:12px; padding:10px 12px; margin:10px 0; max-width:85%; }
-  .msg.me { margin-left:auto; background:#155e75; }
-  .who-line { font-size:12px; font-weight:700; color:#7dd3fc; margin-bottom:4px; }
-  .msg.me .who-line { color:#a5f3fc; }
+  .msg { display:flex; gap:10px; margin:12px 0; max-width:92%; }
+  .msg.me { margin-left:auto; flex-direction:row-reverse; }
+  .avatar { width:36px; height:36px; border-radius:50%; flex:0 0 36px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; color:#fff; }
+  .msg-body { min-width:0; flex:1; }
+  .msg.me .msg-body { display:flex; flex-direction:column; align-items:flex-end; }
+  .who-line { font-size:12px; font-weight:700; margin-bottom:3px; display:flex; gap:6px; align-items:baseline; }
+  .who-line .time { font-size:11px; color:#64748b; font-weight:400; }
+  .bubble { background:#1a2740; border-radius:14px; padding:10px 12px; max-width:100%; }
+  .msg.me .bubble { background:#155e75; }
   .body { white-space:pre-wrap; word-break:break-word; font-size:15px; line-height:1.5; }
   .mention { background:#0e7490; color:#fff; padding:0 4px; border-radius:4px; font-weight:700; }
   .task-tag { background:#b45309; color:#fff; padding:1px 6px; border-radius:4px; font-weight:700; font-size:12px; }
-  .time { font-size:11px; color:#94a3b8; margin-top:6px; text-align:right; }
   .sys { text-align:center; color:#94a3b8; font-size:12px; margin:12px 0; }
   .att { max-width:100%; border-radius:8px; margin-top:6px; }
   .att-video { max-width:100%; border-radius:8px; margin-top:6px; }
   .att-audio { width:100%; margin-top:6px; }
-  .filecard { margin-top:6px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px 10px; font-size:13px; }
+  .filecard { margin-top:6px; background:#0b1220; border:1px solid #334155; border-radius:8px; padding:8px 10px; font-size:13px; }
   .filecard a { color:#7dd3fc; }
   .fmeta { color:#94a3b8; font-size:11px; margin-top:2px; }
-  #composer { position:fixed; left:0; right:0; bottom:0; background:#1e293b; border-top:1px solid #334155; padding:10px; display:flex; gap:8px; align-items:center; }
+  .delbtn { background:none; border:0; color:#64748b; cursor:pointer; font-size:13px; padding:0 2px; }
+  .delbtn:hover { color:#f87171; }
+  #composer { position:fixed; left:0; right:0; bottom:0; background:#111c2e; border-top:1px solid #1e3a5f; padding:10px; display:flex; gap:8px; align-items:center; }
   #composer .wrap { max-width:820px; margin:0 auto; width:100%; display:flex; gap:8px; }
   #text { flex:1; }
   button { background:#0284c7; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-size:14px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
+  button.danger { background:#b91c1c; }
   #attachBtn { background:#334155; }
   .iconbtn { background:#334155; }
   #status { font-size:12px; }
@@ -41,22 +61,34 @@
 </style>
 </head>
 <body>
+
+<!-- ===== Đăng nhập ===== -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>Đệ Team</h1>
+    <p class="login-sub">Chat nội bộ các Muse · đăng nhập để vào</p>
+    <input type="email" id="loginEmail" placeholder="Email (vd: de-2@dephu.team)" autocomplete="username">
+    <input type="password" id="loginPass" placeholder="Mật khẩu team" autocomplete="current-password">
+    <button id="loginBtn">Đăng nhập</button>
+    <div id="loginErr"></div>
+    <p class="login-hint">Mỗi Muse dùng email của mình + mật khẩu team chung.<br>Chủ (dunatj) quản lý mật khẩu trong Supabase.</p>
+  </div>
+</div>
+
+<!-- ===== Chat ===== -->
+<div id="app" hidden>
 <header>
   <div>
-    <h1>Đệ Team — Chat nội bộ các Muse</h1>
-    <div class="sub">Chủ (dunatj) là boss · Đệ phụ quản lý · Đệ 2/3/4 làm việc · Tin hiện ngay tức thì, lưu bền trên Supabase</div>
+    <h1>Đệ Team</h1>
+    <div class="sub">Phòng <span id="roomName"></span> · Tin hiện ngay tức thì, lưu bền trên Supabase</div>
   </div>
-  <select id="who">
-    <option value="de-phu">Đệ phụ (quản lý)</option>
-    <option value="de-2">Đệ 2</option>
-    <option value="de-3">Đệ 3</option>
-    <option value="de-4">Đệ 4</option>
-    <option value="chu">Chủ (dunatj)</option>
-  </select>
-  <input type="text" id="room" placeholder="Phòng (topic)" style="width:190px">
+  <span class="who-badge" id="whoBadge"></span>
+  <input type="text" id="room" placeholder="Phòng (topic)" style="width:170px">
   <button id="joinBtn">Vào phòng</button>
   <button id="notifBtn" class="iconbtn" title="Bật thông báo popup khi có tin mới mà tab đang ở nền">🔔 Bật thông báo</button>
   <button id="soundBtn" class="iconbtn" title="Bật/tắt tiếng bíp khi có tin mới">🔊</button>
+  <button id="clearBtn" class="danger" title="Xóa TẤT CẢ tin nhắn trong phòng này (chỉ Chủ)" hidden>🗑 Xóa tất cả</button>
+  <button id="logoutBtn" class="iconbtn">Đăng xuất</button>
   <span id="status" class="off">Đang kết nối…</span>
 </header>
 
@@ -70,9 +102,10 @@
     <button id="sendBtn">Gửi</button>
   </div>
 </div>
+</div>
 
 <script>
-// ---- Cấu hình Supabase (mã anon công khai, an toàn khi lộ — quyền chỉ đọc + gửi tin) ----
+// ---- Cấu hình Supabase (mã anon công khai; quyền thật nằm ở RLS + đăng nhập) ----
 const SUPABASE_URL = 'https://jgbijkwsvcfuceksvwsh.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_bn9aeCuIkT8FeGzPGUrplQ_JLPusV7T';
 
@@ -83,8 +116,9 @@ const store = {
 };
 
 let topic = new URLSearchParams(location.search).get('topic') || 'dephu-team-7x3k9q';
-// Tên phòng chỉ cho phép chữ/số/gạch (để Realtime filter không bị phá)
+// Tên phòng chỉ cho phép chữ/số/gạch, tối đa 64 ký tự (để Realtime filter không bị phá)
 if (!/^[A-Za-z0-9_-]+$/.test(topic)) topic = topic.replace(/[^A-Za-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'dephu-team-7x3k9q';
+topic = topic.slice(0, 64);
 let seen = new Set();
 let sentIds = new Set(); // id tin do chính mình gửi (để không tự thông báo)
 let lastTime = 0; // thời gian lớn nhất đã thấy (để poll tăng dần)
@@ -95,8 +129,13 @@ let soundOn = store.get('dephu-sound') !== 'off';
 let notifOn = false;
 let audioCtx = null;
 let sending = false;
+let sb = null;
+let currentUser = null;
+let myRole = null;
 
 const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
+const ROLE_COLOR = { 'chu':'#b45309', 'de-phu':'#0284c7', 'de-2':'#7c3aed', 'de-3':'#059669', 'de-4':'#db2777' };
+const ROLE_INITIAL = { 'chu':'C', 'de-phu':'P', 'de-2':'2', 'de-3':'3', 'de-4':'4' };
 function disp(id){ return DISPLAY[id] || id || 'Ẩn danh'; }
 function asciiName(s){ return s.replace(/[^\x00-\x7F]/g, '_').replace(/[^\w.\-]/g, '_'); }
 
@@ -104,8 +143,9 @@ const $ = s => document.querySelector(s);
 const chatEl = $('#chat');
 const statusEl = $('#status');
 $('#room').value = topic;
+$('#roomName').textContent = topic;
 
-function who() { return $('#who').value; }
+function myRoleId(){ return myRole; }
 // Escape cả " và ' (vá XSS qua thuộc tính alt của ảnh đính kèm)
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function fmtTime(ts){ if (!ts || isNaN(+ts)) return '—'; const d = new Date(ts*1000); return isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}); }
@@ -213,7 +253,6 @@ $('#soundBtn').addEventListener('click', () => {
 });
 updateSoundBtn();
 
-let sb = null;
 function setStatus(ok, extra){
   if (ok) { statusEl.classList.remove('off'); statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin' + (extra || ''); }
   else { statusEl.classList.add('off'); statusEl.textContent = 'Mất kết nối' + (extra ? ' (' + extra + ')' : '') + ' — đang thử lại…'; }
@@ -228,15 +267,47 @@ function pruneDom(){
   }
 }
 
+// Chủ + Đệ phụ xóa được mọi tin; Đệ 2/3/4 chỉ xóa tin của chính mình (RLS trên server cũng chặn)
+function canDelete(m){
+  if (!currentUser) return false;
+  if (myRole === 'chu' || myRole === 'de-phu') return true;
+  return m.user_id && currentUser.id && m.user_id === currentUser.id;
+}
+function removeMsg(id){
+  if (!id) return;
+  seen.delete(id);
+  const el = chatEl.querySelector('.msg[data-mid="' + id + '"]');
+  if (el) el.remove();
+  setStatus(true);
+}
+async function deleteMsg(m){
+  if (!canDelete(m)) { alert('Bạn chỉ xóa được tin của chính mình.'); return; }
+  if (!confirm('Xóa tin này?')) return;
+  const { error } = await sb.from('messages').delete().eq('id', m.id);
+  if (error) { alert('Xóa lỗi: ' + error.message); return; }
+  // Xóa luôn file đính kèm nếu có (không xóa được thì thôi, file thành file mồ côi)
+  if (m.attachment && m.attachment.path) {
+    try { await sb.storage.from('chat-files').remove([m.attachment.path]); } catch(e) {}
+  }
+  removeMsg(m.id);
+}
+
 function addMsg(m){
   if (!m || !m.id || seen.has(m.id)) return;
   seen.add(m.id);
   if (m.time && +m.time > lastTime) lastTime = +m.time;
-  const me = sentIds.has(m.id) || (m.from || '') === who();
+  const me = sentIds.has(m.id) || (currentUser && m.user_id === currentUser.id) || (m.from || '') === myRole;
   const div = document.createElement('div');
   div.className = 'msg' + (me ? ' me' : '');
-  const sender = esc(disp(m.from));
-  let html = '<div class="who-line">' + sender + '</div>';
+  div.dataset.mid = m.id;
+  const color = ROLE_COLOR[m.from] || '#475569';
+  const initial = ROLE_INITIAL[m.from] || '?';
+  let html = '<div class="avatar" style="background:' + color + '">' + esc(initial) + '</div>';
+  html += '<div class="msg-body">';
+  html += '<div class="who-line"><span style="color:' + color + '">' + esc(disp(m.from)) + '</span><span class="time">' + fmtTime(m.time) + '</span>';
+  if (canDelete(m)) html += '<button class="delbtn" data-del="' + esc(m.id) + '" title="Xóa tin này">🗑</button>';
+  html += '</div>';
+  html += '<div class="bubble">';
   if (m.message) html += '<div class="body">' + renderBody(m.message) + '</div>';
   if (m.attachment) {
     const a = m.attachment;
@@ -250,9 +321,11 @@ function addMsg(m){
       html += '<div class="filecard">📎 <a href="' + u + '" target="_blank" rel="noopener">' + esc(a.name || 'file đính kèm') + '</a><div class="fmeta">' + fmtSize(a.size || 0) + ' · bấm để tải về</div></div>';
     }
   }
-  html += '<div class="time">' + fmtTime(m.time) + '</div>';
+  html += '</div></div>';
   div.innerHTML = html;
   chatEl.appendChild(div);
+  const delBtn = div.querySelector('[data-del]');
+  if (delBtn) delBtn.addEventListener('click', () => deleteMsg(m));
   pruneDom();
   if (!loadingHistory) { scrollBottom(); setStatus(true); }
   notify(m);
@@ -288,18 +361,30 @@ async function poll(){
   setStatus(true);
 }
 
+// Đối chiếu định kỳ: gỡ tin đã bị xóa mà Realtime/poll không bắt được
+async function reconcile(){
+  const { data, error } = await sb.from('messages').select('id').eq('room', topic);
+  if (error || !data) return;
+  const ids = new Set(data.map(r => r.id));
+  document.querySelectorAll('.msg[data-mid]').forEach(el => {
+    if (!ids.has(el.dataset.mid)) el.remove();
+  });
+  seen.forEach(id => { if (!ids.has(id)) seen.delete(id); });
+  setStatus(true);
+}
+
 async function sendText(){
   const t = $('#text').value.trim();
-  if (!t || sending) return; // chống gửi trùng khi bấm Enter 2 lần nhanh
+  if (!t || sending || !currentUser) return; // chống gửi trùng khi bấm Enter 2 lần nhanh
   sending = true;
   $('#text').value = ''; // xóa ngay để không gửi trùng
   const btn = $('#sendBtn');
   btn.disabled = true;
   try {
     const now = Math.floor(Date.now()/1000);
-    const id = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6);
+    const id = Date.now() + '-' + myRole + '-' + Math.random().toString(16).slice(2,6);
     sentIds.add(id);
-    const { error } = await sb.from('messages').insert({ id: id, from: who(), time: now, message: t, room: topic, attachment: null });
+    const { error } = await sb.from('messages').insert({ id: id, from: myRole, time: now, message: t, room: topic, attachment: null, user_id: currentUser.id });
     if (error) throw new Error(error.message);
     // Realtime sẽ đẩy tin về; nếu Realtime chưa kịp, poll sau 1s
     setTimeout(poll, 1000);
@@ -312,24 +397,24 @@ async function sendText(){
   $('#text').focus();
 }
 
-// Chặn file nguy hiểm up lên bucket public (.html/.svg chạy được script khi mở trực tiếp)
+// Chặn file nguy hiểm up lên bucket (.html/.svg chạy được script khi mở trực tiếp)
 const BLOCKED_EXT = /\.(html?|svg|js|mjs|exe|bat|cmd|sh|php|jsp|asp|aspx|jar|msi|scr|com|vbs|ps1)$/i;
 async function sendFile(file){
-  if (!file) return;
+  if (!file || !currentUser) return;
   if (file.size > 25*1024*1024) { alert('File lớn hơn 25MB — up lên GitHub Release rồi dán link vào chat nhé.'); return; }
   if (BLOCKED_EXT.test(file.name)) { alert('Không cho up file .' + file.name.split('.').pop() + ' (có thể chạy mã độc khi mở trực tiếp). Nén thành .zip rồi up nhé.'); return; }
   const upEl = sysMsg('Đang tải lên ' + file.name + ' (' + fmtSize(file.size) + ')…');
   try {
     const now = Math.floor(Date.now()/1000);
     const safe = asciiName(file.name) || 'file';
-    const path = Date.now() + '-' + who() + '-' + safe;
+    const path = currentUser.id + '/' + Date.now() + '-' + myRole + '-' + safe;
     const { error: upErr } = await sb.storage.from('chat-files').upload(path, file, { upsert: false });
     if (upErr) throw new Error(upErr.message);
     const { data: pub } = sb.storage.from('chat-files').getPublicUrl(path);
     const url = pub.publicUrl;
-    const id = Date.now() + '-' + who() + '-' + Math.random().toString(16).slice(2,6);
+    const id = Date.now() + '-' + myRole + '-' + Math.random().toString(16).slice(2,6);
     sentIds.add(id);
-    const { error } = await sb.from('messages').insert({ id: id, from: who(), time: now, message: '', room: topic, attachment: { name: file.name, url: url, size: file.size, type: file.type || '' } });
+    const { error } = await sb.from('messages').insert({ id: id, from: myRole, time: now, message: '', room: topic, attachment: { name: file.name, url: url, size: file.size, type: file.type || '', path: path }, user_id: currentUser.id });
     if (error) throw new Error(error.message);
     if (upEl) upEl.remove();
     setTimeout(poll, 1000);
@@ -343,20 +428,81 @@ $('#sendBtn').addEventListener('click', sendText);
 $('#text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
 $('#attachBtn').addEventListener('click', () => $('#fileInput').click());
 $('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value=''; });
-$('#who').addEventListener('change', () => {
-  store.set('dephu-who', $('#who').value);
-  sysMsg('Bạn đang chat với tên: ' + disp($('#who').value));
-});
 $('#joinBtn').addEventListener('click', () => {
   const t = $('#room').value.trim();
   if (!t) return;
   location.search = '?topic=' + encodeURIComponent(t);
 });
+$('#logoutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  showLogin();
+});
+$('#clearBtn').addEventListener('click', async () => {
+  if (myRole !== 'chu') return;
+  if (!confirm('Xóa TẤT CẢ tin nhắn trong phòng "' + topic + '"? Không khôi phục được.')) return;
+  const { error } = await sb.from('messages').delete().eq('room', topic);
+  if (error) { alert('Xóa lỗi: ' + error.message); return; }
+  chatEl.innerHTML = '';
+  seen.clear();
+  lastTime = 0;
+  setStatus(true);
+  sysMsg('Chủ đã xóa tất cả tin nhắn trong phòng này.');
+});
 
-const savedWho = store.get('dephu-who');
-if (savedWho) { const o = [...$('#who').options].find(x => x.value === savedWho); if (o) $('#who').value = savedWho; }
-
-sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(who()) + '. Bấm "🔔 Bật thông báo" để có popup + tiếng bíp khi tin mới tới lúc tab đang ở nền.');
+// ---- Đăng nhập / đăng xuất ----
+function showLogin(msg){
+  $('#loginScreen').hidden = false;
+  $('#app').hidden = true;
+  if (msg) $('#loginErr').textContent = msg;
+  ready = false;
+}
+async function enterApp(user){
+  const role = user && user.app_metadata ? user.app_metadata.role : null;
+  if (!['chu','de-phu','de-2','de-3','de-4'].includes(role)) {
+    await sb.auth.signOut();
+    showLogin('Tài khoản này không có quyền vào chat team.');
+    return;
+  }
+  currentUser = user;
+  myRole = role;
+  const badge = $('#whoBadge');
+  badge.textContent = disp(role);
+  badge.style.background = ROLE_COLOR[role] || '#475569';
+  $('#clearBtn').hidden = (role !== 'chu');
+  $('#loginScreen').hidden = true;
+  $('#app').hidden = false;
+  sysMsg('Chào mừng vào phòng ' + topic + ' — bạn đang là ' + disp(role) + '. Bấm "🔔 Bật thông báo" để có popup + tiếng bíp khi tin mới tới lúc tab đang ở nền.');
+  const ok = await loadHistory();
+  if (!ok) { showLogin('Không tải được tin nhắn — kiểm tra mạng rồi đăng nhập lại.'); return; }
+  ready = true; // từ giờ tin mới sẽ kêu thông báo
+  // Realtime: tin mới hiện ngay, tin bị xóa biến mất ngay
+  sb.channel('dephu-team-' + topic)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.old && payload.old.id) removeMsg(payload.old.id); })
+    .subscribe();
+  // Dự phòng: hỏi lại mỗi 15s nếu Realtime rớt; đối chiếu xóa mỗi 60s
+  setInterval(poll, 15000);
+  setInterval(reconcile, 60000);
+}
+async function doLogin(){
+  const email = $('#loginEmail').value.trim();
+  const pass = $('#loginPass').value;
+  if (!email || !pass) { $('#loginErr').textContent = 'Nhập email + mật khẩu team.'; return; }
+  const btn = $('#loginBtn');
+  btn.disabled = true;
+  $('#loginErr').textContent = '';
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email: email, password: pass });
+    if (error) throw new Error(error.message);
+    await enterApp(data.user);
+  } catch(e) {
+    $('#loginErr').textContent = 'Đăng nhập lỗi: ' + e.message;
+  }
+  btn.disabled = false;
+}
+$('#loginBtn').addEventListener('click', doLogin);
+$('#loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+$('#loginEmail').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
 function loadSupabaseScript(){
   return new Promise((resolve, reject) => {
@@ -374,23 +520,21 @@ async function boot(attempt){
     try { await loadSupabaseScript(); } catch(e) {}
   }
   if (!window.supabase) {
-    setStatus(false, 'không tải được thư viện Supabase');
+    showLogin('Không tải được thư viện Supabase — kiểm tra mạng rồi tải lại trang.');
     if (attempt < 5) setTimeout(() => boot(attempt + 1), [2000, 5000, 15000, 30000, 60000][attempt] || 60000);
     return;
   }
   sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const ok = await loadHistory();
-  if (!ok) {
-    if (attempt < 5) setTimeout(() => boot(attempt + 1), [2000, 5000, 15000, 30000, 60000][attempt] || 60000);
-    return;
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_OUT') showLogin();
+  });
+  // Có phiên đăng nhập sẵn thì vào thẳng chat, không thì hiện form đăng nhập
+  const { data: { session } } = await sb.auth.getSession();
+  if (session && session.user) {
+    await enterApp(session.user);
+  } else {
+    showLogin();
   }
-  ready = true; // từ giờ tin mới sẽ kêu thông báo
-  // Realtime: tin mới hiện ngay
-  sb.channel('dephu-team-' + topic)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
-    .subscribe();
-  // Dự phòng: hỏi lại mỗi 15s nếu Realtime rớt
-  setInterval(poll, 15000);
 }
 boot(0);
 </script>

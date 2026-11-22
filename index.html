@@ -10,6 +10,7 @@
   body { margin:0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background:#0b1220; color:#e2e8f0; }
   /* ---------- Màn hình đăng nhập ---------- */
   #loginScreen { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; background:radial-gradient(600px 400px at 50% 20%, #12233d 0%, #0b1220 70%); }
+ #loginScreen[hidden]{display:none} #app[hidden]{display:none}
   .login-card { width:100%; max-width:380px; background:#111c2e; border:1px solid #1e3a5f; border-radius:18px; padding:28px 24px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
   .login-card h1 { margin:0 0 4px; font-size:24px; text-align:center; }
   .login-card .login-sub { text-align:center; color:#94a3b8; font-size:13px; margin:0 0 20px; }
@@ -476,7 +477,7 @@ async function enterApp(user){
   if (!ok) { showLogin('Không tải được tin nhắn — kiểm tra mạng rồi đăng nhập lại.'); return; }
   ready = true; // từ giờ tin mới sẽ kêu thông báo
   // Realtime: tin mới hiện ngay, tin bị xóa biến mất ngay
-  sb.channel('dephu-team-' + topic)
+  sb.channel('dephu-team-' + topic + '-' + Date.now())
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.old && payload.old.id) removeMsg(payload.old.id); })
     .subscribe();

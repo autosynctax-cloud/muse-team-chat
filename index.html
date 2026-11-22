@@ -58,7 +58,8 @@
   .iconbtn { background:#334155; }
   #status { font-size:12px; }
   #status.off { color:#f87171; }
-  #status:not(.off) { color:#4ade80; }
+  #status:not(.off) { color:#4ade80; } /* ---------- Hộp xác nhận riêng (thay confirm() xấu của trình duyệt) ---------- */ #dlgOverlay { position:fixed; inset:0; background:rgba(2,6,23,.7); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; } #dlgOverlay[hidden]{display:none} .dlg { width:100%; max-width:360px; background:#111c2e; border:1px solid #1e3a5f; border-radius:16px; padding:22px; box-shadow:0 24px 60px rgba(0,0,0,.6); } .dlg h2 { margin:0 0 8px; font-size:18px; } .dlg p { margin:0 0 18px; color:#94a3b8; font-size:14px; line-height:1.5; } .dlg .dlg-btns { display:flex; gap:10px; justify-content:flex-end; } .dlg .dlg-btns button { padding:10px 18px; } .dlg .dlg-btns .cancel { background:#334155; }
+ 
 </style>
 </head>
 <body>
@@ -99,13 +100,13 @@
   <div class="wrap">
     <button id="attachBtn" title="Đính kèm file/ảnh/video">📎</button>
     <input type="file" id="fileInput" hidden>
-    <input type="text" id="text" placeholder="Nhắn cho team… (gõ [TASK] để giao việc, @de-2 để gọi)">
+    <input type="text" id="text" placeholder="Nhắn cho team… (Ctrl+V dán ảnh · [TASK] giao việc · @de-2 để gọi)">
     <button id="sendBtn">Gửi</button>
   </div>
 </div>
 </div>
 
-<script>
+<!-- ===== Hộp xác nhận riêng ===== --><div id="dlgOverlay" hidden><div class="dlg" role="dialog" aria-modal="true"><h2 id="dlgTitle"></h2><p id="dlgText"></p><div class="dlg-btns"><button id="dlgCancel" class="cancel">Hủy</button><button id="dlgOk" class="danger">Xóa</button></div></div></div><script>
 // ---- Cấu hình Supabase (mã anon công khai; quyền thật nằm ở RLS + đăng nhập) ----
 const SUPABASE_URL = 'https://jgbijkwsvcfuceksvwsh.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_bn9aeCuIkT8FeGzPGUrplQ_JLPusV7T';
@@ -281,9 +282,9 @@ function removeMsg(id){
   if (el) el.remove();
   setStatus(true);
 }
-async function deleteMsg(m){
+function confirmDlg(title, text, okLabel){ return new Promise(resolve => { const ov = $('#dlgOverlay'); $('#dlgTitle').textContent = title; $('#dlgText').textContent = text; $('#dlgOk').textContent = okLabel || 'Xóa'; ov.hidden = false; const done = v => { ov.hidden = true; $('#dlgOk').onclick = null; $('#dlgCancel').onclick = null; ov.onclick = null; resolve(v); }; $('#dlgOk').onclick = () => done(true); $('#dlgCancel').onclick = () => done(false); ov.onclick = e => { if (e.target === ov) done(false); }; }); } async function deleteMsg(m){
   if (!canDelete(m)) { alert('Bạn chỉ xóa được tin của chính mình.'); return; }
-  if (!confirm('Xóa tin này?')) return;
+  if (!(await confirmDlg('Xóa tin nhắn', 'Xóa tin này? Không khôi phục được.', 'Xóa'))) return;
   const { error } = await sb.from('messages').delete().eq('id', m.id);
   if (error) { alert('Xóa lỗi: ' + error.message); return; }
   // Xóa luôn file đính kèm nếu có (không xóa được thì thôi, file thành file mồ côi)
@@ -428,7 +429,7 @@ async function sendFile(file){
 $('#sendBtn').addEventListener('click', sendText);
 $('#text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
 $('#attachBtn').addEventListener('click', () => $('#fileInput').click());
-$('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value=''; });
+$('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value=''; }); document.addEventListener('paste', e => { if ($('#app').hidden) return; const items = (e.clipboardData && e.clipboardData.items) || []; for (const it of items) { if (it.type && it.type.indexOf('image/') === 0) { const f = it.getAsFile(); if (!f) continue; e.preventDefault(); const ext = (f.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png'; const named = new File([f], 'anh-chup-man-hinh-' + Date.now() + '.' + ext, { type: f.type }); sendFile(named); return; } } });
 $('#joinBtn').addEventListener('click', () => {
   const t = $('#room').value.trim();
   if (!t) return;
@@ -440,7 +441,7 @@ $('#logoutBtn').addEventListener('click', async () => {
 });
 $('#clearBtn').addEventListener('click', async () => {
   if (myRole !== 'chu') return;
-  if (!confirm('Xóa TẤT CẢ tin nhắn trong phòng "' + topic + '"? Không khôi phục được.')) return;
+  if (!(await confirmDlg('Xóa tất cả', 'Xóa TẤT CẢ tin nhắn trong phòng "' + topic + '"? Không khôi phục được.', 'Xóa tất cả'))) return;
   const { error } = await sb.from('messages').delete().eq('room', topic);
   if (error) { alert('Xóa lỗi: ' + error.message); return; }
   chatEl.innerHTML = '';

@@ -58,7 +58,10 @@
   .iconbtn { background:#334155; }
   #status { font-size:12px; }
   #status.off { color:#f87171; }
-  #status:not(.off) { color:#4ade80; } /* ---------- Hộp xác nhận riêng (thay confirm() xấu của trình duyệt) ---------- */ #dlgOverlay { position:fixed; inset:0; background:rgba(2,6,23,.7); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; } #dlgOverlay[hidden]{display:none} .dlg { width:100%; max-width:360px; background:#111c2e; border:1px solid #1e3a5f; border-radius:16px; padding:22px; box-shadow:0 24px 60px rgba(0,0,0,.6); } .dlg h2 { margin:0 0 8px; font-size:18px; } .dlg p { margin:0 0 18px; color:#94a3b8; font-size:14px; line-height:1.5; } .dlg .dlg-btns { display:flex; gap:10px; justify-content:flex-end; } .dlg .dlg-btns button { padding:10px 18px; } .dlg .dlg-btns .cancel { background:#334155; }
+  #status:not(.off) { color:#4ade80; }
+  /* ---------- Đang soạn tin + Đã xem ---------- */
+  #typing { position:fixed; left:0; right:0; bottom:60px; text-align:center; font-size:12px; color:#94a3b8; font-style:italic; pointer-events:none; z-index:4; }
+  .seenline { font-size:11px; color:#64748b; margin-top:2px; } /* ---------- Hộp xác nhận riêng (thay confirm() xấu của trình duyệt) ---------- */ #dlgOverlay { position:fixed; inset:0; background:rgba(2,6,23,.7); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; } #dlgOverlay[hidden]{display:none} .dlg { width:100%; max-width:360px; background:#111c2e; border:1px solid #1e3a5f; border-radius:16px; padding:22px; box-shadow:0 24px 60px rgba(0,0,0,.6); } .dlg h2 { margin:0 0 8px; font-size:18px; } .dlg p { margin:0 0 18px; color:#94a3b8; font-size:14px; line-height:1.5; } .dlg .dlg-btns { display:flex; gap:10px; justify-content:flex-end; } .dlg .dlg-btns button { padding:10px 18px; } .dlg .dlg-btns .cancel { background:#334155; }
  
 </style>
 </head>
@@ -95,6 +98,8 @@
 </header>
 
 <div id="chat"></div>
+
+<div id="typing"></div>
 
 <div id="composer">
   <div class="wrap">
@@ -134,6 +139,13 @@ let sending = false;
 let sb = null;
 let currentUser = null;
 let myRole = null;
+let rtChannel = null; // kênh Realtime cố định theo phòng (cho typing broadcast + room_reads)
+let typingMap = new Map(); // role -> thời điểm gõ gần nhất (ms)
+let lastTypingSent = 0;
+let roomReads = new Map(); // role -> msg_time của tin mới nhất vai trò đó đã xem
+let lastReadSent = 0;
+let myLatestReadTime = 0;
+let lastMsgId = '';
 
 const DISPLAY = { 'de-phu':'Đệ phụ (quản lý)', 'de-2':'Đệ 2', 'de-3':'Đệ 3', 'de-4':'Đệ 4', 'chu':'Chủ (dunatj)' };
 const ROLE_COLOR = { 'chu':'#b45309', 'de-phu':'#0284c7', 'de-2':'#7c3aed', 'de-3':'#059669', 'de-4':'#db2777' };
@@ -225,7 +237,7 @@ function notify(m){
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { unread = 0; updateTitle(); ensureAudio(); }
+  if (!document.hidden) { unread = 0; updateTitle(); ensureAudio(); if (lastTime > 0 && lastMsgId) markRead(lastTime, lastMsgId); } // quay lại tab là đã xem tới tin mới nhất
 });
 document.addEventListener('click', ensureAudio);
 document.addEventListener('keydown', ensureAudio);
@@ -258,6 +270,71 @@ updateSoundBtn();
 function setStatus(ok, extra){
   if (ok) { statusEl.classList.remove('off'); statusEl.textContent = 'Đã kết nối · phòng ' + topic + ' · ' + seen.size + ' tin' + (extra || ''); }
   else { statusEl.classList.add('off'); statusEl.textContent = 'Mất kết nối' + (extra ? ' (' + extra + ')' : '') + ' — đang thử lại…'; }
+}
+
+// ---- Đang soạn tin (typing indicator qua Realtime broadcast) ----
+function renderTyping(){
+  const now = Date.now();
+  const names = [];
+  typingMap.forEach((ts, role) => {
+    if (role !== myRole && now - ts < 4000) names.push(disp(role));
+    else if (now - ts >= 4000) typingMap.delete(role);
+  });
+  const el = $('#typing');
+  if (el) el.textContent = names.length ? names.join(', ') + ' đang soạn tin…' : '';
+}
+setInterval(renderTyping, 1000); // dọn tin gõ đã cũ
+function onTypingBroadcast(p){
+  if (!p || !p.from || p.from === myRole) return;
+  typingMap.set(p.from, Date.now());
+  renderTyping();
+}
+function sendTyping(){
+  if (!rtChannel || !currentUser) return;
+  const now = Date.now();
+  if (now - lastTypingSent < 2000) return; // chống spam broadcast
+  lastTypingSent = now;
+  try { rtChannel.send({ type: 'broadcast', event: 'typing', payload: { from: myRole } }); } catch(e) {}
+}
+
+// ---- Đã xem (read receipts: mỗi vai trò lưu tin mới nhất mình đã xem) ----
+async function fetchReads(){
+  if (!sb || !currentUser) return;
+  const { data, error } = await sb.from('room_reads').select('role,msg_time').eq('room', topic);
+  if (error || !data) return;
+  roomReads = new Map(data.map(r => [r.role, +r.msg_time || 0]));
+  refreshSeenLines();
+}
+async function markRead(msgTime, msgId){
+  if (!sb || !currentUser || !msgTime) return;
+  if (msgTime <= myLatestReadTime) return;
+  const now = Date.now();
+  if (now - lastReadSent < 2000) return; // chống spam upsert
+  lastReadSent = now;
+  myLatestReadTime = msgTime;
+  try {
+    await sb.from('room_reads').upsert({ role: myRole, room: topic, message_id: msgId, msg_time: msgTime, read_at: Math.floor(now/1000) }, { onConflict: 'role,room' });
+  } catch(e) {}
+}
+function refreshSeenLines(){
+  // Mỗi vai trò khác: tìm tin MỚI NHẤT của mình mà họ đã xem, chỉ hiện "Đã xem" ở đó (như Messenger)
+  const myMsgs = [...document.querySelectorAll('.msg.me[data-mid]')];
+  myMsgs.forEach(el => { const s = el.querySelector('.seenline'); if (s) s.textContent = ''; });
+  roomReads.forEach((mt, role) => {
+    if (role === myRole || !mt) return;
+    let best = null, bestTime = -1;
+    myMsgs.forEach(el => {
+      const t = +(el.dataset.mtime || 0);
+      if (t && t <= mt && t > bestTime) { best = el; bestTime = t; }
+    });
+    if (best) {
+      const s = best.querySelector('.seenline');
+      if (s) {
+        const cur = s.textContent;
+        s.textContent = cur ? cur + ', ' + disp(role) : '✓ Đã xem bởi ' + disp(role);
+      }
+    }
+  });
 }
 
 function pruneDom(){
@@ -298,10 +375,12 @@ function addMsg(m){
   if (!m || !m.id || seen.has(m.id)) return;
   seen.add(m.id);
   if (m.time && +m.time > lastTime) lastTime = +m.time;
+  if (m.time && +m.time === lastTime) lastMsgId = m.id;
   const me = sentIds.has(m.id) || (currentUser && m.user_id === currentUser.id) || (m.from || '') === myRole;
   const div = document.createElement('div');
   div.className = 'msg' + (me ? ' me' : '');
   div.dataset.mid = m.id;
+  div.dataset.mtime = m.time || 0;
   const color = ROLE_COLOR[m.from] || '#475569';
   const initial = ROLE_INITIAL[m.from] || '?';
   let html = '<div class="avatar" style="background:' + color + '">' + esc(initial) + '</div>';
@@ -323,7 +402,9 @@ function addMsg(m){
       html += '<div class="filecard">📎 <a href="' + u + '" target="_blank" rel="noopener">' + esc(a.name || 'file đính kèm') + '</a><div class="fmeta">' + fmtSize(a.size || 0) + ' · bấm để tải về</div></div>';
     }
   }
-  html += '</div></div>';
+  html += '</div>'; // đóng bubble
+  if (me) html += '<div class="seenline"></div>';
+  html += '</div>'; // đóng msg-body
   div.innerHTML = html;
   chatEl.appendChild(div);
   const delBtn = div.querySelector('[data-del]');
@@ -331,6 +412,8 @@ function addMsg(m){
   pruneDom();
   if (!loadingHistory) { scrollBottom(); setStatus(true); }
   notify(m);
+  if (!me && !loadingHistory && !document.hidden) markRead(m.time, m.id); // người khác nhắn, mình đang xem tab thì đánh dấu đã xem
+  refreshSeenLines();
 }
 
 function sysMsg(t){
@@ -361,6 +444,7 @@ async function poll(){
   if (error) { setStatus(false, error.message); return; }
   (data || []).forEach(addMsg);
   setStatus(true);
+  fetchReads(); // cập nhật "Đã xem" cùng lúc
 }
 
 // Đối chiếu định kỳ: gỡ tin đã bị xóa mà Realtime/poll không bắt được
@@ -380,6 +464,8 @@ async function sendText(){
   if (!t || sending || !currentUser) return; // chống gửi trùng khi bấm Enter 2 lần nhanh
   sending = true;
   $('#text').value = ''; // xóa ngay để không gửi trùng
+  typingMap.delete(myRole);
+  renderTyping();
   const btn = $('#sendBtn');
   btn.disabled = true;
   try {
@@ -428,6 +514,7 @@ async function sendFile(file){
 
 $('#sendBtn').addEventListener('click', sendText);
 $('#text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+$('#text').addEventListener('input', () => { if ($('#text').value.trim()) sendTyping(); }); // gõ là báo "đang soạn tin" cho team
 $('#attachBtn').addEventListener('click', () => $('#fileInput').click());
 $('#fileInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value=''; }); document.addEventListener('paste', e => { if ($('#app').hidden) return; const items = (e.clipboardData && e.clipboardData.items) || []; for (const it of items) { if (it.type && it.type.indexOf('image/') === 0) { const f = it.getAsFile(); if (!f) continue; e.preventDefault(); const ext = (f.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png'; const named = new File([f], 'anh-chup-man-hinh-' + Date.now() + '.' + ext, { type: f.type }); sendFile(named); return; } } });
 $('#joinBtn').addEventListener('click', () => {
@@ -436,6 +523,9 @@ $('#joinBtn').addEventListener('click', () => {
   location.search = '?topic=' + encodeURIComponent(t);
 });
 $('#logoutBtn').addEventListener('click', async () => {
+  if (rtChannel) { try { sb.removeChannel(rtChannel); } catch(e) {} rtChannel = null; }
+  typingMap.clear();
+  renderTyping();
   await sb.auth.signOut();
   showLogin();
 });
@@ -485,10 +575,25 @@ async function enterApp(user){
   const ok = await loadHistory();
   if (!ok) { showLogin('Không tải được tin nhắn — kiểm tra mạng rồi đăng nhập lại.'); return; }
   ready = true; // từ giờ tin mới sẽ kêu thông báo
+  fetchReads(); // lấy "Đã xem" hiện tại
+  if (!document.hidden && lastTime > 0 && lastMsgId) markRead(lastTime, lastMsgId); // vào phòng là đã xem tới tin mới nhất
   // Realtime: tin mới hiện ngay, tin bị xóa biến mất ngay (tên kênh duy nhất mỗi lần đăng nhập — đăng nhập lại không bị lỗi "cannot add postgres_changes callbacks after subscribe()")
   sb.channel('dephu-team-' + topic + '-' + Date.now())
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.new) addMsg(payload.new); })
     .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: 'room=eq.' + topic }, payload => { if (payload.old && payload.old.id) removeMsg(payload.old.id); })
+    .subscribe();
+  // Kênh Realtime cố định theo phòng: typing broadcast + thay đổi "Đã xem" (tên cố định để mọi người cùng nghe được nhau)
+  if (rtChannel) { try { sb.removeChannel(rtChannel); } catch(e) {} rtChannel = null; }
+  rtChannel = sb.channel('dephu-team-rt-' + topic)
+    .on('broadcast', { event: 'typing' }, payload => { onTypingBroadcast(payload.payload); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'room_reads', filter: 'room=eq.' + topic }, payload => {
+      const r = payload.new || payload.old;
+      if (r && r.role) {
+        if (payload.eventType === 'DELETE') roomReads.delete(r.role);
+        else roomReads.set(r.role, +r.msg_time || 0);
+        refreshSeenLines();
+      }
+    })
     .subscribe();
   // Dự phòng: hỏi lại mỗi 15s nếu Realtime rớt; đối chiếu xóa mỗi 60s
   setInterval(poll, 15000);
